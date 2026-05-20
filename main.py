@@ -1,13 +1,22 @@
 """代理切换器 —— 一个轻量的 Windows 系统代理一键切换工具。"""
 
 import os
+import sys
+import threading
 import tkinter as tk
 from tkinter import ttk, messagebox
+
+import pystray
+from PIL import Image
 
 from proxy_core import enable_proxy, disable_proxy, get_status
 from data_manager import ConfigManager
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+if getattr(sys, 'frozen', False):
+    BASE_DIR = sys._MEIPASS
+else:
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 ICO_PATH = os.path.join(BASE_DIR, "cat.ico")
 
 
@@ -28,6 +37,8 @@ STATUS_RADIUS = 18
 class ProxySwitcher:
     def __init__(self):
         self.config = ConfigManager()
+        self._tray_icon = None
+        self._quitting = False
 
         # ---- 主窗口 ----
         self.root = tk.Tk()
@@ -38,11 +49,17 @@ class ProxySwitcher:
         self.root.configure(bg=BG_COLOR)
         self._center_window(self.root, WINDOW_WIDTH, WINDOW_HEIGHT)
 
+        # 关闭按钮 → 最小化到托盘
+        self.root.protocol("WM_DELETE_WINDOW", self._hide_window)
+
         # ---- 样式 ----
         self._setup_style()
 
         # ---- 界面组件 ----
         self._build_ui()
+
+        # ---- 系统托盘 ----
+        self._setup_tray()
 
         # ---- 启动时自动连接 ----
         self.root.after(200, self._auto_connect_on_start)
@@ -219,6 +236,37 @@ class ProxySwitcher:
 
         self._refresh()
 
+    # ==================== 系统托盘 ====================
+
+    def _setup_tray(self):
+        """在独立线程中启动系统托盘图标。"""
+        tray_img = Image.open(ICO_PATH)
+        self._tray_icon = pystray.Icon(
+            "proxy_switcher", tray_img,
+            menu=pystray.Menu(
+                pystray.MenuItem("显示窗口", self._show_window, default=True),
+                pystray.MenuItem("退出", self._quit_app),
+            ),
+        )
+
+    def _show_window(self):
+        """从托盘恢复窗口。"""
+        self.root.after(0, self.root.deiconify)
+
+    def _hide_window(self):
+        """最小化到系统托盘。"""
+        self.root.withdraw()
+        if not hasattr(self, "_tray_shown"):
+            self._tray_shown = True
+            # 首次最小化时提示
+            self._tray_icon.notify("代理切换器已最小化到系统托盘", "代理切换器")
+
+    def _quit_app(self):
+        """彻底退出。"""
+        self._quitting = True
+        self._tray_icon.stop()
+        self.root.after(0, self.root.destroy)
+
     # ==================== 配置管理窗口 ====================
 
     def _open_settings(self):
@@ -233,6 +281,11 @@ class ProxySwitcher:
 
     def run(self):
         self._refresh()
+
+        # 在独立线程中运行托盘图标
+        if self._tray_icon:
+            threading.Thread(target=self._tray_icon.run, daemon=True).start()
+
         self.root.mainloop()
 
 

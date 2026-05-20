@@ -7,8 +7,13 @@
 """
 import json
 import os
+import sys
 
-CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
+if getattr(sys, 'frozen', False):
+    # 打包后 exe 同目录下
+    CONFIG_PATH = os.path.join(os.path.dirname(sys.executable), "config.json")
+else:
+    CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
 
 _DEFAULT_CONFIG = {
     "profiles": [
